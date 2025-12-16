@@ -1,60 +1,76 @@
 name: Video Production & Server Ops
 on:
-  workflow_dispatch: # 수동 실행 가능
+  workflow_dispatch:
   push:
     branches: [ "main" ]
 
 jobs:
   video-ops-pipeline:
     runs-on: ubuntu-latest
+    # 중요: 파일을 저장소에 쓰기(Push) 위해 권한 설정 필수
     permissions:
-      contents: write  # 결과물을 저장소에 다시 푸시하기 위한 권한
+      contents: write
 
     steps:
       # 1. 소스 코드 가져오기
       - name: 📥 Checkout Repository
         uses: actions/checkout@v4
 
-      # 2. 파이썬 환경 설정 (최신 안정 버전 3.11 사용 권장)
+      # 2. 파이썬 환경 설정
       - name: 🐍 Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: 'pip'
 
-      # 3. [영상 서버 설치] 시스템 레벨 의존성 설치 (FFmpeg 필수)
-      - name: 🎬 Install System Dependencies (Video Server Tools)
+      # 3. [영상 서버 설치] 시스템 레벨 의존성 (FFmpeg)
+      - name: 🎬 Install System Dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg libsm6 libxext6
-          echo "FFmpeg 및 비디오 코덱 설치 완료"
 
-      # 4. 파이썬 의존성 설치 (수정된 requirements.txt 사용)
+      # 4. 파이썬 의존성 설치
       - name: 📦 Install Python Dependencies
         run: |
           python -m pip install --upgrade pip
           if [ -f ./scripts/requirements.txt ]; then pip install -r ./scripts/requirements.txt; fi
-          # 에러 방지를 위해 필요한 패키지 재확인 설치
           pip install moviepy opencv-python-headless numpy pandas
 
-      # 5. [영상 제작 및 업그레이드] 스크립트 실행
-      # (실제 스크립트 파일명이 main.py 또는 generate_video.py라고 가정)
-      - name: 🏃‍♂️ Run Video Production & Upgrade
+      # 5. [영상 제작] 스크립트 실행
+      - name: 🏃‍♂️ Run Video Production
         run: |
-          echo "영상 제작 프로세스 시작..."
-          # 스크립트 폴더로 이동하여 실행 (경로에 주의)
           cd scripts
-          
-          # 예시: 메인 실행 파일이 있다면 아래 주석을 해제하고 파일명을 맞추세요
+          # 영상 생성 스크립트 실행 (예: generate_video.py)
           # python generate_video.py
           
-          # 테스트용 임시 명령 (실제 스크립트가 없을 경우 에러 방지용)
-          python -c "import numpy; import cv2; print('영상 서버 환경 정상 작동 중 (OpenCV/Numpy 로드 성공)')"
+          # (테스트용) 더미 파일 생성 (실제 사용 시 이 줄은 삭제하세요)
+          touch output_video.mp4
 
-      # 6. [활성화] 결과물 저장 (Artifact)
-      - name: 📤 Upload Video Artifacts
+      # 6. [결과물 저장] Artifact 업로드 (다운로드용)
+      - name: 📤 Upload Artifacts (Downloadable)
         uses: actions/upload-artifact@v4
         with:
           name: generated-videos
-          path: scripts/output/*.mp4  # 결과물이 저장되는 경로
-          retention-days: 5
+          path: scripts/*.mp4
+
+      # 7. [추가된 기능] .mp4 파일을 저장소로 업로드 (Commit & Push)
+      - name: 💾 Commit and Push Videos
+        run: |
+          # Git 유저 설정 (봇 이름 사용)
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # .mp4 파일이 있는지 확인 후 커밋
+          if ls scripts/*.mp4 1> /dev/null 2>&1; then
+            echo "MP4 파일 발견. 업로드를 준비합니다."
+            
+            # 생성된 mp4 파일을 git 스테이지에 추가 (경로에 맞게 수정 가능)
+            git add scripts/*.mp4
+            
+            # 커밋 메시지 작성 및 푸시
+            git commit -m "Add generated video files [skip ci]"
+            git push
+            echo "✅ 영상 파일 업로드(Push) 완료"
+          else
+            echo "⚠️ 업로드할 MP4 파일이 없습니다."
+          fi
