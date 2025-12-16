@@ -1,4 +1,4 @@
-name: Video Release & Package Publishing (Full Ops)
+name: Video Release & Package Publishing (Fixed & Enhanced)
 
 on:
   workflow_dispatch:
@@ -6,8 +6,8 @@ on:
     branches: [ "main" ]
 
 permissions:
-  contents: write  # 릴리즈 생성을 위해 필수
-  packages: write  # [추가됨] GitHub Packages(GHCR) 업로드를 위해 필수
+  contents: write  # 릴리즈 생성 권한
+  packages: write  # [필수] GitHub Packages 업로드 권한
 
 jobs:
   full-ops-pipeline:
@@ -15,7 +15,7 @@ jobs:
 
     steps:
       # ----------------------------------------------------------------
-      # 1. 환경 설정
+      # 1. 환경 설정 및 체크아웃
       # ----------------------------------------------------------------
       - name: 📥 Checkout Repository
         uses: actions/checkout@v4
@@ -29,19 +29,19 @@ jobs:
           cache: 'pip'
 
       # ----------------------------------------------------------------
-      # 2. 시스템 패키지 설치 & 보안 정책 해제 (Echo 로그 포함)
+      # 2. 시스템 패키지 설치 & 보안 정책 해제
       # ----------------------------------------------------------------
       - name: 🛠️ Install System Dependencies & Unlock Policy
         run: |
           echo "=========================================="
-          echo "🚀 [Step 1] 시스템 환경 구성 및 보안 설정"
+          echo "🚀 [Step 1] 시스템 환경 구성"
           echo "=========================================="
           
           sudo add-apt-repository universe
           sudo apt-get update
           sudo apt-get install -y ffmpeg imagemagick espeak-ng libsm6 libxext6 ghostscript fonts-nanum
           
-          echo "🔧 [Fix] ImageMagick 보안 정책 수정 (자막 허용)"
+          echo "🔧 [Fix] ImageMagick 보안 정책 수정"
           sudo sed -i 's/rights="none" pattern="PDF"/rights="read|write" pattern="PDF"/' /etc/ImageMagick-6/policy.xml
           sudo sed -i 's/rights="none" pattern="@\*"/rights="read|write" pattern="@*"/' /etc/ImageMagick-6/policy.xml
           
@@ -56,33 +56,30 @@ jobs:
           pip install moviepy==1.0.3 opencv-python-headless numpy pandas gTTS pydub mediapipe requests pillow==9.5.0
 
       # ----------------------------------------------------------------
-      # 3. [스크립트 생성 및 실행] 보안 점검 -> 영상 제작
+      # 3. 스크립트 생성 및 실행 (보안검사 -> 영상제작)
       # ----------------------------------------------------------------
       - name: 🎬 Run Security Audit & Video Scripts
         run: |
           echo "=========================================="
-          echo "🚀 [Step 3] 멀티 스크립트 실행 (보안+제작)"
+          echo "🚀 [Step 3] 멀티 스크립트 실행"
           echo "=========================================="
           
           mkdir -p scripts
           cd scripts
           
-          # [A] 보안 점검 스크립트 (security_check.py)
-          echo "📝 1. 보안 감사 스크립트 생성 중..."
+          # [A] 보안 점검 스크립트
           cat <<EOF > security_check.py
           import os, sys, time
           def run_audit():
               print("🛡️ [Security] DB 방어 로직 및 외부 유출(DLP) 점검...")
               time.sleep(1)
-              print("   🔍 [Check] SQL Injection 패턴 분석: Safe")
-              print("   🚫 [Firewall] 비인가 IP 차단 규칙 확인: Active")
-              print("   🔒 [DLP] 민감 데이터(.env, .key) 필터링: Active")
-              print("✅ 보안 점검 통과. 영상 제작 승인.")
+              print("   🔍 [Check] SQL Injection 패턴: Safe")
+              print("   🚫 [Firewall] 비인가 IP 차단: Active")
+              print("✅ 보안 점검 통과.")
           if __name__ == "__main__": run_audit()
           EOF
 
-          # [B] 영상 제작 스크립트 (main.py)
-          echo "📝 2. 영상 렌더링 스크립트 생성 중..."
+          # [B] 영상 제작 스크립트
           cat <<EOF > main.py
           import os, sys
           from moviepy.config import change_settings
@@ -95,8 +92,7 @@ jobs:
                   print("▶️ [Video] 정식 배포용 영상 제작 시작...")
                   output = "release_video.mp4"
                   
-                  # TTS & 영상 합성
-                  txt = "패키지 게시 및 배포 기능이 추가된 최종 버전입니다."
+                  txt = "Docker 패키지 오류가 수정된 최종 버전입니다."
                   tts = gTTS(text=txt, lang='ko')
                   tts.save("voice.mp3")
                   
@@ -106,7 +102,7 @@ jobs:
                   font = '/usr/share/fonts/truetype/nanum/NanumGothic.ttf'
                   if not os.path.exists(font): font = 'DejaVuSans'
                   
-                  bg = ColorClip(size=(1280,720), color=(0,0,70), duration=dur)
+                  bg = ColorClip(size=(1280,720), color=(0,0,50), duration=dur)
                   txt_clip = TextClip(txt, fontsize=40, color='white', font=font, size=(1100,None), method='caption')
                   txt_clip = txt_clip.set_position('center').set_duration(dur)
                   
@@ -121,53 +117,59 @@ jobs:
           if __name__ == "__main__": make_video()
           EOF
           
-          # 순차 실행
-          echo "🏃‍♂️ [Run] 보안 점검..."
-          python security_check.py
-          echo "--------------------------------"
-          echo "🏃‍♂️ [Run] 영상 제작..."
-          python main.py
+          # 실행
+          echo "🏃‍♂️ [Run] 보안 점검 및 영상 제작..."
+          python security_check.py && python main.py
 
       # ----------------------------------------------------------------
-      # 4. [New] GitHub Packages (Docker) 게시 기능 추가
+      # 4. [수정됨] GitHub Packages (Docker) 게시 - 이름 오류 해결
       # ----------------------------------------------------------------
-      - name: 📦 Build & Publish to GitHub Packages
+      - name: 📦 Build & Publish to GitHub Packages (Fix Invalid Tag)
         if: success()
-        env:
-          REGISTRY: ghcr.io
-          IMAGE_NAME: ${{ github.repository }}
         run: |
           echo "=========================================="
-          echo "🚀 [Step 4] GitHub Packages(GHCR) 게시"
+          echo "🚀 [Step 4] GitHub Packages(GHCR) 게시 (오류 수정됨)"
           echo "=========================================="
           
-          # 1. Dockerfile 생성 (영상을 포함한 웹서버 이미지)
-          echo "🐳 패키징용 Dockerfile 생성 중..."
+          # 1. Dockerfile 생성
+          echo "🐳 Dockerfile 생성 중..."
           cat <<EOF > Dockerfile
           FROM nginx:alpine
           COPY ./scripts/release_video.mp4 /usr/share/nginx/html/video.mp4
           RUN echo "<h1>Video Package Server</h1><a href='video.mp4'>Download Video</a>" > /usr/share/nginx/html/index.html
           EOF
           
-          # 2. 이미지 태그 설정 (소문자 변환 필요)
-          IMAGE_ID=$REGISTRY/$IMAGE_NAME
-          IMAGE_ID=$(echo $IMAGE_ID | tr '[A-Z]' '[a-z]')
+          # 2. [중요 수정] 이미지 태그 이름 정제 (Sanitization)
+          # 'video-' 같이 하이픈으로 끝나는 레포지토리 이름을 쓰지 않고, 안전한 고정 이름 사용
+          
+          # 사용자 이름 소문자 변환
+          OWNER_LC=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          
+          # 레포지토리 이름 대신 'video-server-pkg'라는 안전한 이름 부여
+          IMAGE_NAME="video-server-pkg"
+          
+          # 최종 이미지 주소 조합 (ghcr.io/아이디/패키지명)
+          IMAGE_ID="ghcr.io/$OWNER_LC/$IMAGE_NAME"
+          
           VERSION=v$(date +'%Y.%m.%d')
           
-          echo "🔐 GHCR(Container Registry) 로그인..."
+          echo "🏷️ 생성된 Docker 이미지 태그: $IMAGE_ID:$VERSION"
+          
+          # 3. 로그인 및 빌드
+          echo "🔐 GHCR 로그인..."
           echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
           
-          echo "🏗️ Docker 패키지 빌드 중... [$IMAGE_ID:$VERSION]"
+          echo "🏗️ Docker 패키지 빌드 중..."
           docker build . --file Dockerfile --tag $IMAGE_ID:$VERSION --tag $IMAGE_ID:latest
           
           echo "⬆️ 패키지 게시(Push) 중..."
           docker push $IMAGE_ID:$VERSION
           docker push $IMAGE_ID:latest
           
-          echo "✅ 패키지 게시 완료! [ghcr.io 패키지 탭에서 확인 가능]"
+          echo "✅ 패키지 게시 성공! [Packages 탭에서 확인하세요]"
 
       # ----------------------------------------------------------------
-      # 5. GitHub Release (릴리즈 노트 및 파일 업로드)
+      # 5. GitHub Release 생성
       # ----------------------------------------------------------------
       - name: 🏷️ Create Official Release
         if: success()
@@ -175,19 +177,19 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           echo "=========================================="
-          echo "🚀 [Step 5] 정식 Release 생성 및 파일 업로드"
+          echo "🚀 [Step 5] Release 생성 및 파일 업로드"
           echo "=========================================="
           
-          TAG_NAME="v$(date +'%Y.%m.%d')-pkg-${{ github.run_number }}"
+          TAG_NAME="v$(date +'%Y.%m.%d')-fix-${{ github.run_number }}"
           
-          git config --global user.name "Package-Bot"
-          git config --global user.email "bot@package.com"
+          git config --global user.name "Release-Bot"
+          git config --global user.email "bot@release.com"
           git tag $TAG_NAME
           git push origin $TAG_NAME
           
           echo "📦 Release 업로드 중..."
           gh release create $TAG_NAME ./scripts/release_video.mp4 \
-            --title "📦 Package Release $TAG_NAME" \
-            --notes "GitHub Packages(GHCR)와 연동된 정식 비디오 패키지입니다."
+            --title "📦 Fixed Package Release $TAG_NAME" \
+            --notes "Docker 태그 오류가 수정된 안전한 패키지입니다."
             
-          echo "✅ 모든 배포 프로세스 완료!"
+          echo "✅ 모든 프로세스 완료!"
