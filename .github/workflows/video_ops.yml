@@ -1,76 +1,116 @@
-name: Video Production & Server Ops
+name: Full Video Production Server (AI + TTS + Auto-Upload)
+
 on:
-  workflow_dispatch:
+  workflow_dispatch:      # 관리자가 수동으로 버튼 눌러 실행
   push:
-    branches: [ "main" ]
+    branches: [ "main" ]  # 메인 브랜치 업데이트 시 자동 실행
 
 jobs:
-  video-ops-pipeline:
+  video-production-server:
     runs-on: ubuntu-latest
-    # 중요: 파일을 저장소에 쓰기(Push) 위해 권한 설정 필수
+    # 중요: 생성된 영상 파일을 저장소에 쓰기(Push) 위한 권한 설정
     permissions:
       contents: write
 
     steps:
-      # 1. 소스 코드 가져오기
+      # ----------------------------------------------------------------
+      # 1. [환경 준비] 소스 코드 및 파이썬 설정
+      # ----------------------------------------------------------------
       - name: 📥 Checkout Repository
         uses: actions/checkout@v4
 
-      # 2. 파이썬 환경 설정
-      - name: 🐍 Setup Python
+      - name: 🐍 Setup Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: 'pip'
 
-      # 3. [영상 서버 설치] 시스템 레벨 의존성 (FFmpeg)
-      - name: 🎬 Install System Dependencies
+      # ----------------------------------------------------------------
+      # 2. [영상 서버 설치] 시스템 패키지 대량 설치 (업그레이드 반영)
+      # ----------------------------------------------------------------
+      - name: 🛠️ Install System Dependencies (Video/Audio/Graphics)
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg libsm6 libxext6
+          
+          # 1. FFmpeg: 영상 인코딩/디코딩 핵심 엔진
+          # 2. ImageMagick: 자막, 썸네일, 그래픽 처리
+          # 3. Libespeak-ng: 오디오 처리를 위한 라이브러리
+          sudo apt-get install -y ffmpeg imagemagick libespeak-ng libsm6 libxext6 ghostscript
 
-      # 4. 파이썬 의존성 설치
-      - name: 📦 Install Python Dependencies
+          # ImageMagick 정책 보안 완화 (자막 처리를 위해 필수)
+          sudo sed -i 's/rights="none" pattern="PDF"/rights="read|write" pattern="PDF"/' /etc/ImageMagick-6/policy.xml
+          
+          echo "✅ 영상 서버 시스템 구축 완료 (FFmpeg, ImageMagick, Audio installed)"
+
+      # ----------------------------------------------------------------
+      # 3. [라이브러리 설치] 파이썬 패키지 설치 (AI + TTS 반영)
+      # ----------------------------------------------------------------
+      - name: 📦 Install Python Libraries (AI & TTS Support)
         run: |
           python -m pip install --upgrade pip
-          if [ -f ./scripts/requirements.txt ]; then pip install -r ./scripts/requirements.txt; fi
-          pip install moviepy opencv-python-headless numpy pandas
-
-      # 5. [영상 제작] 스크립트 실행
-      - name: 🏃‍♂️ Run Video Production
-        run: |
-          cd scripts
-          # 영상 생성 스크립트 실행 (예: generate_video.py)
-          # python generate_video.py
           
-          # (테스트용) 더미 파일 생성 (실제 사용 시 이 줄은 삭제하세요)
-          touch output_video.mp4
+          # 기존 requirements.txt가 있다면 우선 설치
+          if [ -f ./scripts/requirements.txt ]; then pip install -r ./scripts/requirements.txt; fi
+          
+          # [핵심] 대량 기능 추가를 위한 강제 설치 명령
+          # moviepy: 영상 편집
+          # gTTS, pydub: 음성 합성 및 오디오 처리
+          # mediapipe: AI 얼굴/모션 인식
+          # opencv: 이미지 처리
+          pip install moviepy opencv-python-headless numpy pandas gTTS pydub mediapipe requests
+          
+          echo "✅ 파이썬 AI/미디어 라이브러리 설치 완료"
 
-      # 6. [결과물 저장] Artifact 업로드 (다운로드용)
-      - name: 📤 Upload Artifacts (Downloadable)
+      # ----------------------------------------------------------------
+      # 4. [영상 제작] 스크립트 실행 (메인 프로세스)
+      # ----------------------------------------------------------------
+      - name: 🎬 Run Video Generation Script
+        run: |
+          echo "🚀 영상 제작 스크립트 실행 중..."
+          
+          # scripts 폴더가 있다면 이동
+          if [ -d "./scripts" ]; then cd scripts; fi
+          
+          # 실제 스크립트 실행 (파일명이 main.py라고 가정)
+          # python main.py
+          
+          # [테스트용] 스크립트가 없을 때 에러 방지용 (삭제 가능)
+          # 실제 작동 시에는 위 python main.py 주석을 해제하고 아래 줄은 삭제하세요.
+          if [ ! -f "main.py" ]; then
+            echo "⚠️ 메인 스크립트가 없어 테스트 파일을 생성합니다."
+            touch output_video_$(date +%Y%m%d).mp4
+          fi
+
+      # ----------------------------------------------------------------
+      # 5. [활성화] 결과물 아티팩트 저장 (웹에서 다운로드 가능하게)
+      # ----------------------------------------------------------------
+      - name: 📤 Upload Artifacts (Temporary Storage)
         uses: actions/upload-artifact@v4
         with:
-          name: generated-videos
-          path: scripts/*.mp4
+          name: finished-videos
+          path: |
+            scripts/*.mp4
+            scripts/*.mp3
+            *.mp4
 
-      # 7. [추가된 기능] .mp4 파일을 저장소로 업로드 (Commit & Push)
-      - name: 💾 Commit and Push Videos
+      # ----------------------------------------------------------------
+      # 6. [서버 저장] 생성된 영상을 저장소로 자동 업로드
+      # ----------------------------------------------------------------
+      - name: 💾 Commit and Push Generated Videos
         run: |
-          # Git 유저 설정 (봇 이름 사용)
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          # Git 봇 계정 설정
+          git config --global user.name "Video-Bot"
+          git config --global user.email "bot@video-server.com"
           
-          # .mp4 파일이 있는지 확인 후 커밋
-          if ls scripts/*.mp4 1> /dev/null 2>&1; then
-            echo "MP4 파일 발견. 업로드를 준비합니다."
-            
-            # 생성된 mp4 파일을 git 스테이지에 추가 (경로에 맞게 수정 가능)
-            git add scripts/*.mp4
-            
-            # 커밋 메시지 작성 및 푸시
-            git commit -m "Add generated video files [skip ci]"
-            git push
-            echo "✅ 영상 파일 업로드(Push) 완료"
+          # MP4 파일 감지 및 스테이징
+          # (scripts 폴더와 루트 경로 모두 확인)
+          git add scripts/*.mp4 *.mp4 2>/dev/null || true
+          
+          # 변경사항이 있는지 확인 후 커밋
+          if git diff --staged --quiet; then
+            echo "⚠️ 새로 생성된 영상 파일이 없습니다. 커밋을 건너뜁니다."
           else
-            echo "⚠️ 업로드할 MP4 파일이 없습니다."
+            git commit -m "🎥 New Video Generated: $(date +'%Y-%m-%d %H:%M:%S') [skip ci]"
+            git push
+            echo "✅ 영상 파일이 저장소로 안전하게 업로드되었습니다."
           fi
