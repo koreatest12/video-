@@ -1,4 +1,4 @@
-name: Fixed Video Production Workflow
+name: Fixed Video Ops (ImageMagick Policy Unlocked)
 
 on:
   workflow_dispatch:
@@ -25,12 +25,12 @@ jobs:
           cache: 'pip'
 
       # ----------------------------------------------------------------
-      # 2. 시스템 패키지 설치 (로그 포함)
+      # 2. 시스템 패키지 설치 및 [핵심] 보안 정책 해제
       # ----------------------------------------------------------------
-      - name: 🛠️ Install System Dependencies
+      - name: 🛠️ Install System Dependencies & Unlock Security Policy
         run: |
           echo "=========================================="
-          echo "🚀 [Step 1] 시스템 패키지 설치 및 설정"
+          echo "🚀 [Step 1] 시스템 패키지 및 보안 설정"
           echo "=========================================="
           
           # 패키지 저장소 추가 및 설치
@@ -38,11 +38,23 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ffmpeg imagemagick espeak-ng libsm6 libxext6 ghostscript fonts-nanum
           
-          # ImageMagick 정책 수정 (한 줄로 명확하게 처리)
-          echo "🔧 ImageMagick 정책 보안 완화 중..."
-          sudo sed -i 's/rights="none" pattern="PDF"/rights="read|write" pattern="PDF"/' /etc/ImageMagick-6/policy.xml || true
+          echo "🔧 [Critical Fix] ImageMagick 보안 정책 강제 해제 중..."
           
-          echo "✅ 시스템 패키지 설치 완료"
+          # 1. PDF 권한 허용
+          sudo sed -i 's/rights="none" pattern="PDF"/rights="read|write" pattern="PDF"/' /etc/ImageMagick-6/policy.xml
+          
+          # 2. [에러 원인 해결] @* 패턴 (텍스트 파일 참조) 권한 허용
+          # 이 부분이 막혀 있어서 'attempt to perform...' 에러가 발생한 것임
+          sudo sed -i 's/rights="none" pattern="@\*"/rights="read|write" pattern="@*"/' /etc/ImageMagick-6/policy.xml
+          
+          # 3. 모든 path 권한 허용 (혹시 모를 추가 에러 방지)
+          sudo sed -i 's/<policy domain="path" rights="none" pattern="@\*" \/>//' /etc/ImageMagick-6/policy.xml || true
+          
+          # 정책 변경 확인 (로그 출력)
+          echo "🔎 변경된 정책 확인:"
+          cat /etc/ImageMagick-6/policy.xml | grep "pattern=\"@*\"" || echo "Pattern @* not found (might be good)"
+          
+          echo "✅ 시스템 보안 설정 완료"
 
       # ----------------------------------------------------------------
       # 3. 파이썬 라이브러리 설치
@@ -55,28 +67,29 @@ jobs:
           
           python -m pip install --upgrade pip
           
-          # 호환성이 검증된 버전으로 설치
+          # MoviePy 1.0.3 버전과 Pillow 호환성 유지 (중요)
           pip install moviepy==1.0.3 opencv-python-headless numpy pandas gTTS pydub mediapipe requests pillow==9.5.0
           
-          echo "✅ 파이썬 라이브러리 설치 완료"
+          echo "✅ 라이브러리 설치 완료"
 
       # ----------------------------------------------------------------
-      # 4. 영상 제작 스크립트 생성 및 실행 (문법 오류 수정됨)
+      # 4. 영상 제작 스크립트 실행
       # ----------------------------------------------------------------
       - name: 🎬 Run Video Generation Script
         run: |
           echo "=========================================="
-          echo "🚀 [Step 3] 영상 제작 스크립트 생성 및 실행"
+          echo "🚀 [Step 3] 영상 제작 스크립트 실행"
           echo "=========================================="
           
           mkdir -p scripts
           cd scripts
           
-          # [수정됨] EOF 문법 오류 해결: 줄바꿈을 명확하게 분리함
+          # 스크립트 생성 (Here-Doc 문법 준수)
           cat <<EOF > main.py
           import os
           import sys
-          # MoviePy 설정
+          
+          # [핵심 설정] MoviePy가 ImageMagick을 찾을 수 있도록 명시
           from moviepy.config import change_settings
           change_settings({"IMAGEMAGICK_BINARY": "/usr/bin/convert"})
           
@@ -85,12 +98,12 @@ jobs:
           
           def make_video():
               try:
-                  print("▶️ 영상 제작 로직 시작...")
-                  output_file = "hq_video_output.mp4"
+                  print("▶️ [Python] 영상 제작 로직 시작...")
+                  output_file = "final_output.mp4"
                   
-                  # 1. 음성(TTS) 생성
-                  print("   - 음성 합성 중...")
-                  text_script = "GitHub Actions 영상 서버가 정상 작동 중입니다."
+                  # 1. 음성 생성
+                  print("   - (1/4) 음성 합성(TTS) 중...")
+                  text_script = "ImageMagick 보안 정책이 해결되었습니다. 영상 제작 성공!"
                   tts = gTTS(text=text_script, lang='ko')
                   tts.save("voice.mp3")
                   
@@ -98,63 +111,85 @@ jobs:
                   audio_clip = AudioFileClip("voice.mp3")
                   duration = audio_clip.duration + 2.0
                   
-                  # 3. 폰트 설정 (없으면 기본값)
+                  # 3. 자막 생성 (에러가 발생했던 구간)
+                  print("   - (2/4) 자막 렌더링 중 (ImageMagick)...")
+                  
+                  # 폰트 확인
                   font_path = '/usr/share/fonts/truetype/nanum/NanumGothic.ttf'
                   if not os.path.exists(font_path):
-                      font_path = 'DejaVuSans'
+                      font_path = 'DejaVuSans' # fallback
+                      
+                  # 배경
+                  bg_clip = ColorClip(size=(1280, 720), color=(0, 70, 0), duration=duration)
                   
-                  # 4. 영상 구성
-                  bg_clip = ColorClip(size=(1280, 720), color=(0, 0, 100), duration=duration)
-                  txt_clip = TextClip(text_script, fontsize=40, color='white', font=font_path, size=(1100, None), method='caption')
+                  # 자막 (TextClip 생성 시 ImageMagick convert 호출됨)
+                  # method='caption'은 자동 줄바꿈 지원
+                  txt_clip = TextClip(
+                      text_script, 
+                      fontsize=50, 
+                      color='white', 
+                      font=font_path, 
+                      size=(1000, None), 
+                      method='caption'
+                  )
                   txt_clip = txt_clip.set_position('center').set_duration(duration)
                   
-                  # 5. 합성 및 저장
+                  # 4. 합성 및 저장
+                  print("   - (3/4) 영상 합성 및 인코딩...")
                   final_video = CompositeVideoClip([bg_clip, txt_clip]).set_audio(audio_clip)
-                  final_video.write_videofile(output_file, fps=24, codec='libx264', audio_codec='aac', logger=None)
+                  
+                  # logger=None으로 설정하여 불필요한 ffmpeg 로그 숨김
+                  final_video.write_videofile(
+                      output_file, 
+                      fps=24, 
+                      codec='libx264', 
+                      audio_codec='aac',
+                      logger=None
+                  )
                   
                   if os.path.exists(output_file):
-                      print(f"✅ 파일 생성 성공: {output_file}")
+                      print(f"✅ [Success] (4/4) 파일 생성 완료: {output_file}")
                   else:
-                      print("❌ 파일 생성 실패")
+                      print("❌ [Error] 파일 생성 실패")
                       sys.exit(1)
                       
               except Exception as e:
-                  print(f"❌ 치명적 오류 발생: {e}")
+                  print(f"❌ [Critical Error] : {e}")
+                  # 에러 상세 내용을 보기 위해 traceback 출력 권장
+                  import traceback
+                  traceback.print_exc()
                   sys.exit(1)
           
           if __name__ == "__main__":
               make_video()
           EOF
           
-          # 띄어쓰기 문제 없이 파일이 잘 생성되었는지 확인 후 실행
-          echo "📄 main.py 생성 확인..."
-          ls -l main.py
-          
-          echo "▶️ 파이썬 스크립트 실행..."
+          echo "▶️ 파이썬 스크립트 실행 시작..."
           python main.py
+          
+          echo "🔎 결과 파일 확인:"
+          ls -lh *.mp4
 
       # ----------------------------------------------------------------
-      # 5. 결과물 업로드 (오류 방지 로직 포함)
+      # 5. 결과물 업로드
       # ----------------------------------------------------------------
       - name: 💾 Commit and Push Generated Videos
         run: |
           echo "=========================================="
-          echo "🚀 [Step 4] 결과물 Git 저장소 업로드"
+          echo "🚀 [Step 4] Git 저장소 업로드"
           echo "=========================================="
           
           git config --global user.name "Video-Bot"
           git config --global user.email "bot@video-server.com"
           
-          echo "📦 MP4 파일 스테이징..."
-          # 강제로 추가 (-f) 하여 gitignore 무시
+          # 강제로 추가 (-f)
           git add -f scripts/*.mp4
           
           if git diff --staged --quiet; then
-            echo "⚠️ [Warning] 업로드할 파일이 없습니다. (스크립트 오류 확인 필요)"
-            # 파일을 못 만들었으면 에러로 처리하여 워크플로우 중단
+            echo "⚠️ [Warning] 업로드할 파일이 없습니다."
             exit 1
           else
-            git commit -m "🎥 High-Quality Video Generated [skip ci]"
+            git commit -m "🎥 Fixed Video Generated [skip ci]"
             git push
             echo "✅ 영상 업로드 완료!"
           fi
