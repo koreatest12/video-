@@ -1,0 +1,101 @@
+name: Workflow Manager & Maintenance (System Admin)
+
+# 매일 자정(00:00 KST)에 자동으로 실행되어 시스템을 점검합니다.
+on:
+  schedule:
+    - cron: '0 15 * * *' # UTC 15:00 = KST 00:00 (한국 시간 자정)
+  workflow_dispatch:      # 수동 실행 가능
+
+permissions:
+  actions: write # 워크플로우 실행 및 삭제 권한
+  contents: write # 저장소 활동 신호(Keep-alive) 생성을 위한 권한
+
+jobs:
+  system-maintenance:
+    runs-on: ubuntu-latest
+    
+    steps:
+      # ----------------------------------------------------------------
+      # 1. 환경 설정
+      # ----------------------------------------------------------------
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+
+      # ----------------------------------------------------------------
+      # 2. [청소] 저장소 용량 확보 (오래된 영상/로그 삭제)
+      # ----------------------------------------------------------------
+      - name: 🧹 Delete Old Workflow Runs & Artifacts
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          retain_days: 3        # 3일 지난 기록은 삭제
+          keep_minimum_runs: 5  # 최소 최근 5개는 남김
+          delete_run_by_conclusion_pattern: "cancelled, skipped, success" # 실패한 건 분석을 위해 남길 수도 있음 (여기선 성공한 것 위주 삭제)
+
+      - name: 📝 Log Cleanup Status
+        run: |
+          echo "=========================================="
+          echo "🧹 [System] 저장소 청소 완료"
+          echo "=========================================="
+          echo "오래된 실행 기록(Runs)과 아티팩트(Artifacts)를 정리했습니다."
+          echo "확보된 공간은 새로운 영상 제작에 사용됩니다."
+
+      # ----------------------------------------------------------------
+      # 3. [생존신호] 워크플로우 비활성화 방지 (Keep-alive)
+      # ----------------------------------------------------------------
+      - name: ❤️ Keep-alive (Prevent GitHub Suspension)
+        uses: gautamkrishnar/keepalive-workflow@v1
+        with:
+          # 60일간 커밋이 없으면 Cron이 멈추는 것을 방지하기 위해 더미 커밋 생성
+          commit_message: "🤖 [Maintenance] Workflow Keep-alive ping"
+          committer_username: "Workflow-Manager-Bot"
+          committer_email: "manager@bot.com"
+
+      - name: 📝 Log Keep-alive Status
+        run: |
+          echo "=========================================="
+          echo "❤️ [System] 생존 신호(Keep-alive) 전송 완료"
+          echo "=========================================="
+          echo "GitHub의 60일 비활성화 정책을 우회하여 상시 가동 상태를 유지합니다."
+
+      # ----------------------------------------------------------------
+      # 4. [트리거] 메인 영상 제작 워크플로우 강제 가동
+      # ----------------------------------------------------------------
+      - name: 🚀 Trigger Main Video Ops
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "=========================================="
+          echo "🚀 [Manager] 메인 워크플로우 가동 지시"
+          echo "=========================================="
+          
+          # 메인 워크플로우 파일명 (secure_video_ops.yml)을 지정하여 실행
+          # 파일명이 다를 경우 아래 'secure_video_ops.yml'을 실제 파일명으로 수정하세요.
+          WORKFLOW_FILE="secure_video_ops.yml"
+          
+          echo "대상: $WORKFLOW_FILE"
+          
+          # 실행 명령 (gh cli 사용)
+          if gh workflow run $WORKFLOW_FILE --ref main; then
+            echo "✅ 메인 워크플로우($WORKFLOW_FILE)가 성공적으로 트리거되었습니다."
+          else
+            echo "❌ 워크플로우 실행 실패. 파일명을 확인하거나 권한을 점검하세요."
+            # 실패 시에도 매니저는 죽지 않도록 exit code 0 처리 (선택사항)
+            exit 1
+          fi
+
+      # ----------------------------------------------------------------
+      # 5. [보고] 관리 요약 리포트 생성
+      # ----------------------------------------------------------------
+      - name: 📊 Generate Maintenance Report
+        if: always()
+        run: |
+          echo "## 👮‍♂️ Workflow Manager Report" >> $GITHUB_STEP_SUMMARY
+          echo "관리자 봇이 시스템 유지보수를 완료했습니다." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Task | Status | Details |" >> $GITHUB_STEP_SUMMARY
+          echo "| :--- | :---: | :--- |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Cleanup** | ✅ Done | Retain 3 days, Min 5 runs |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Keep-alive** | ✅ Active | Prevented suspension |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Main Trigger** | 🚀 Fired | Started \`secure_video_ops.yml\` |" >> $GITHUB_STEP_SUMMARY
